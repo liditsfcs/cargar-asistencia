@@ -17,11 +17,22 @@
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
+    /* Estilo específico para los inputs de fecha */
+    input[type="date"] {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        padding: 0.5rem;
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        cursor: pointer;
+    }
   </style>
   <script type="module">
-    // Importar funciones de Firebase
+    // Importar funciones de Firebase. Se añade 'query' y 'where' para el filtrado.
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-    import { getFirestore, collection, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
 
     // ¡IMPORTANTE! Usa la misma configuración que tu app de asistencia
     const firebaseConfig = {
@@ -46,7 +57,14 @@
         : `<i class="${iconClass} mr-2"></i> ${text}`;
     }
 
-    // --- Lógica para cargar y mostrar datos ---
+    // Función para limpiar los campos de fecha
+    function resetFilters() {
+        document.getElementById('startDate').value = '';
+        document.getElementById('endDate').value = '';
+        document.getElementById('loadButton').click(); // Recargar datos sin filtros
+    }
+
+    // --- Lógica para cargar y mostrar datos (CON FILTRO) ---
     async function cargarAsistencias() {
       const loadButton = document.getElementById('loadButton');
       const copyButton = document.getElementById('copyButton');
@@ -60,14 +78,41 @@
       totalCountSpan.textContent = ''; 
       copyButton.classList.add('hidden'); 
 
+      // Obtener valores de los filtros
+      const startDateInput = document.getElementById('startDate').value;
+      const endDateInput = document.getElementById('endDate').value;
+
+      let queryConstraints = [];
+      let dbQuery = collection(db, "asistencias");
+
+      // Nota Importante: Asumimos que 'fechaHora' está guardado como string en formato 'YYYY-MM-DD HH:mm:ss'
+      // para que la comparación lexicográfica (de string) funcione correctamente.
+      
+      if (startDateInput) {
+          // Filtra desde el inicio del día seleccionado (e.g., '2025-10-28')
+          const startFilterString = `${startDateInput}`;
+          queryConstraints.push(where("fechaHora", ">=", startFilterString));
+      }
+
+      if (endDateInput) {
+          // Filtra hasta el final del día seleccionado (e.g., '2025-10-28 23:59:59')
+          const endFilterString = `${endDateInput} 23:59:59`; 
+          queryConstraints.push(where("fechaHora", "<=", endFilterString));
+      }
+
+      // Aplicar filtros a la consulta
+      let finalQuery = queryConstraints.length > 0 
+          ? query(dbQuery, ...queryConstraints) 
+          : dbQuery;
+      
       try {
-        const querySnapshot = await getDocs(collection(db, "asistencias"));
+        const querySnapshot = await getDocs(finalQuery);
         
         const totalRegistros = querySnapshot.size;
         totalCountSpan.textContent = `Total: ${totalRegistros}`;
 
         if (querySnapshot.empty) {
-          messageDiv.textContent = 'No se encontraron registros de asistencia.';
+          messageDiv.textContent = 'No se encontraron registros de asistencia con el filtro aplicado.';
           messageDiv.classList.remove('hidden');
           return;
         }
@@ -109,8 +154,8 @@
       }
     }
 
-    // --- Lógica para copiar ---
-    function copiarDatos() {
+    // --- Lógica de Copiar y Eliminar (sin cambios) ---
+    function copiarDatos() {
         const resultsDiv = document.getElementById('results');
         const copyButton = document.getElementById('copyButton');
         const csvData = resultsDiv.dataset.csv;
@@ -130,7 +175,6 @@
         }, 2000);
     }
 
-    // --- LÓGICA AÑADIDA PARA ELIMINAR DATOS ---
     async function eliminarAsistencias() {
       const password = prompt("🚨 ATENCIÓN: Para eliminar todos los registros, por favor ingrese la contraseña de administrador:");
 
@@ -185,11 +229,12 @@
       }
     }
 
-    // Asignar eventos a los botones y establecer su estado inicial
+    // Asignar eventos a los botones
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('loadButton').addEventListener('click', cargarAsistencias);
       document.getElementById('copyButton').addEventListener('click', copiarDatos);
       document.getElementById('deleteButton').addEventListener('click', eliminarAsistencias);
+      document.getElementById('resetFilterButton').addEventListener('click', resetFilters); // Evento para limpiar filtros
       
       // Establecer los iconos iniciales en los botones
       document.getElementById('loadButton').innerHTML = '<i class="fas fa-download mr-2"></i> Cargar Asistencias';
@@ -206,12 +251,30 @@
         <i class="fas fa-chart-bar text-blue-500 mr-3"></i> Gestión de Asistencias
       </h1>
       <span id="totalCount" class="text-2xl font-bold text-blue-600 mt-2 sm:mt-0 px-4 py-1 bg-blue-50 rounded-lg border border-blue-200"></span> 
-      
     </div>
 
-        <p class="text-gray-600 mb-8">Esta herramienta te permite exportar y gestionar los datos de asistencia de tu base de datos en Firebase Firestore. La exportación se realiza en formato CSV, ideal para hojas de cálculo.</p>
-    
-        <div class="flex flex-wrap items-center gap-4 mb-10 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+        <p class="text-gray-600 mb-8">Esta herramienta te permite **exportar y gestionar** los datos de asistencia de tu base de datos en Firebase Firestore. La exportación se realiza en formato CSV, ideal para hojas de cálculo.</p>
+   
+    <div class="p-4 bg-yellow-50 rounded-xl border border-yellow-200 shadow-md mb-8">
+        <h3 class="text-xl font-semibold text-gray-700 mb-4 flex items-center">
+            <i class="fas fa-calendar-alt text-yellow-600 mr-2"></i> Filtrar por Fecha
+        </h3>
+        <div class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label for="startDate" class="block text-sm font-medium text-gray-700 mb-1">Desde:</label>
+                <input type="date" id="startDate" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+            </div>
+            <div>
+                <label for="endDate" class="block text-sm font-medium text-gray-700 mb-1">Hasta:</label>
+                <input type="date" id="endDate" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+            </div>
+            <button id="resetFilterButton" class="flex items-center justify-center bg-gray-500 text-white font-semibold py-2 px-4 rounded-xl hover:bg-gray-600 transition duration-300 transform hover:scale-105 shadow-md">
+                <i class="fas fa-undo mr-2"></i> Limpiar Filtros
+            </button>
+        </div>
+        <p class="text-sm text-gray-500 mt-3 italic">Selecciona fechas y haz clic en "Cargar Asistencias" para aplicar el filtro.</p>
+    </div>
+            <div class="flex flex-wrap items-center gap-4 mb-10 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
             <button id="loadButton" class="flex items-center justify-center bg-blue-600 text-white font-semibold py-3 px-6 rounded-xl hover:bg-blue-700 transition duration-300 transform hover:scale-105 shadow-lg shadow-blue-300/50">
       </button>
       
