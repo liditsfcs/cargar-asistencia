@@ -3,18 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Exportar Asistencias</title>
+  <title>📊 Exportar y Gestionar Asistencias</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLMDJj7QhYJqQ1dM4gB5/Wp12/93A8B08A0Wl77P9x6UeH3O8U15K9Zf/G4J0z9A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
     body { font-family: 'Inter', sans-serif; }
-    #results pre {
-      white-space: pre-wrap;
-      word-wrap: break-word;
+    /* Clase para el spinner de carga */
+    .spinner {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
   </style>
   <script type="module">
-    // Importar funciones de Firebase (se añaden deleteDoc y doc)
+    // Importar funciones de Firebase
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
     import { getFirestore, collection, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
 
@@ -33,25 +38,33 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
+    // Función auxiliar para actualizar el contenido del botón con un spinner
+    function updateButtonContent(button, text, isLoading, iconClass = '') {
+      button.disabled = isLoading;
+      button.innerHTML = isLoading 
+        ? `<i class="fas fa-spinner spinner mr-2"></i> Cargando...`
+        : `<i class="${iconClass} mr-2"></i> ${text}`;
+    }
+
     // --- Lógica para cargar y mostrar datos ---
     async function cargarAsistencias() {
       const loadButton = document.getElementById('loadButton');
       const copyButton = document.getElementById('copyButton');
       const resultsDiv = document.getElementById('results');
       const messageDiv = document.getElementById('message');
-      const totalCountSpan = document.getElementById('totalCount'); // Nuevo: Span para el total
+      const totalCountSpan = document.getElementById('totalCount');
 
-      loadButton.disabled = true;
-      loadButton.textContent = 'Cargando...';
+      updateButtonContent(loadButton, 'Cargar Asistencias', true);
       resultsDiv.innerHTML = '';
       messageDiv.classList.add('hidden');
-      totalCountSpan.textContent = ''; // Limpiar el contador al iniciar la carga
+      totalCountSpan.textContent = ''; 
+      copyButton.classList.add('hidden'); // Ocultar copiar al iniciar carga
 
       try {
         const querySnapshot = await getDocs(collection(db, "asistencias"));
         
-        const totalRegistros = querySnapshot.size; // Obtener el total de documentos
-        totalCountSpan.textContent = `Total: ${totalRegistros}`; // Mostrar el total
+        const totalRegistros = querySnapshot.size;
+        totalCountSpan.textContent = `Total: ${totalRegistros}`;
 
         if (querySnapshot.empty) {
           messageDiv.textContent = 'No se encontraron registros de asistencia.';
@@ -61,144 +74,11 @@
 
         let formattedData = "Nombre;Email;Fecha y Hora\n";
         let htmlData = `
+          <div class="shadow overflow-hidden border-b border-gray-200 sm:rounded-lg">
           <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50"><tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha y Hora</th>
+            <thead class="bg-blue-100"><tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider">Nombre</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider">Email</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider">Fecha y Hora</th>
             </tr></thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-        `;
-
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          formattedData += `"${data.nombre}";"${data.email}";"${data.fechaHora}"\n`;
-          htmlData += `<tr>
-            <td class="px-6 py-4 whitespace-nowrap">${data.nombre}</td>
-            <td class="px-6 py-4 whitespace-nowrap">${data.email}</td>
-            <td class="px-6 py-4 whitespace-nowrap">${data.fechaHora}</td>
-          </tr>`;
-        });
-
-        htmlData += `</tbody></table>`;
-        resultsDiv.innerHTML = htmlData;
-        resultsDiv.dataset.csv = formattedData;
-        copyButton.classList.remove('hidden');
-
-      } catch (error) {
-        messageDiv.textContent = 'Error al cargar los datos: ' + error.message;
-        messageDiv.classList.remove('hidden');
-        totalCountSpan.textContent = ''; // Limpiar si hay error
-        console.error("Error fetching documents: ", error);
-      } finally {
-        loadButton.disabled = false;
-        loadButton.textContent = 'Cargar Asistencias';
-      }
-    }
-
-    // --- Lógica para copiar ---
-    function copiarDatos() {
-        const resultsDiv = document.getElementById('results');
-        const copyButton = document.getElementById('copyButton');
-        const csvData = resultsDiv.dataset.csv;
-        const textArea = document.createElement("textarea");
-        textArea.value = csvData;
-        document.body.appendChild(textArea);
-        textArea.select();
-        try {
-            document.execCommand('copy');
-            copyButton.textContent = '¡Copiado!';
-        } catch (err) {
-            console.error('No se pudo copiar', err);
-        }
-        document.body.removeChild(textArea);
-        setTimeout(() => { copyButton.textContent = 'Copiar como CSV (para Excel)'; }, 2000);
-    }
-
-    // --- LÓGICA AÑADIDA PARA ELIMINAR DATOS ---
-    async function eliminarAsistencias() {
-      const password = prompt("Para eliminar todos los registros, por favor ingrese la contraseña de administrador:");
-
-      if (password === null) return; // El usuario presionó "Cancelar"
-
-      if (password === "fcs2160") {
-        const confirmacion = confirm("¿Estás SEGURO de que quieres eliminar TODAS las asistencias? Esta acción no se puede deshacer.");
-        
-        if (confirmacion) {
-          const deleteButton = document.getElementById('deleteButton');
-          const resultsDiv = document.getElementById('results');
-          const messageDiv = document.getElementById('message');
-          const totalCountSpan = document.getElementById('totalCount'); // Nuevo: Span para el total
-
-          deleteButton.disabled = true;
-          deleteButton.textContent = 'Eliminando...';
-          messageDiv.classList.add('hidden');
-
-          try {
-            const querySnapshot = await getDocs(collection(db, "asistencias"));
-            
-            if (querySnapshot.empty) {
-              messageDiv.textContent = 'La base de datos ya está vacía.';
-              messageDiv.classList.remove('hidden');
-              return;
-            }
-            
-            // Crea un array con todas las promesas de eliminación
-            const deletePromises = [];
-            querySnapshot.forEach((docSnapshot) => {
-              deletePromises.push(deleteDoc(doc(db, "asistencias", docSnapshot.id)));
-            });
-
-            // Espera a que todas las eliminaciones se completen
-            await Promise.all(deletePromises);
-
-            resultsDiv.innerHTML = '';
-            document.getElementById('copyButton').classList.add('hidden');
-            messageDiv.className = "p-3 mb-4 bg-green-100 text-green-800 rounded-md"; // Estilo de éxito
-            messageDiv.textContent = '¡Todas las asistencias han sido eliminadas correctamente!';
-            totalCountSpan.textContent = 'Total: 0'; // Actualizar el contador a 0
-
-          } catch (error) {
-            messageDiv.className = "p-3 mb-4 bg-yellow-100 text-yellow-800 rounded-md"; // Estilo de error
-            messageDiv.textContent = 'Error al eliminar los datos: ' + error.message;
-            console.error("Error deleting documents: ", error);
-          } finally {
-            deleteButton.disabled = false;
-            deleteButton.textContent = 'Eliminar asistencias';
-          }
-        }
-      } else {
-        alert("Contraseña incorrecta. No se realizaron cambios.");
-      }
-    }
-
-    // Asignar eventos a los botones cuando el DOM esté listo
-    document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('loadButton').addEventListener('click', cargarAsistencias);
-      document.getElementById('copyButton').addEventListener('click', copiarDatos);
-      // Evento añadido para el nuevo botón
-      document.getElementById('deleteButton').addEventListener('click', eliminarAsistencias);
-    });
-  </script>
-</head>
-<body class="bg-gray-50 p-4 sm:p-8">
-  <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
-    <div class="flex justify-between items-center mb-4">
-      <h1 class="text-2xl font-bold text-gray-800">Exportador de Asistencias</h1>
-      <span id="totalCount" class="text-xl font-semibold text-blue-600"></span> 
-    </div>
-    <p class="text-gray-600 mb-6">Esta herramienta lee los datos de tu colección 'asistencias' en Firestore y los muestra en una tabla. Luego puedes copiarlos en formato CSV para pegarlos fácilmente en una hoja de cálculo como Excel o Google Sheets.</p>
-    
-    <div class="flex flex-wrap gap-4 mb-6">
-      <button id="loadButton" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition">Cargar Asistencias</button>
-      <button id="copyButton" class="hidden bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition">Copiar como CSV (para Excel)</button>
-      <button id="deleteButton" class="bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition">Eliminar asistencias</button>
-    </div>
-
-    <div id="message" class="hidden p-3 mb-4 bg-yellow-100 text-yellow-800 rounded-md"></div>
-
-    <div id="results" class="overflow-x-auto">
-      </div>
-  </div>
-</body>
-</html>
+            <tbody class="bg-white divide-y divide-gray-100">
