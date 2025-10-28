@@ -17,8 +17,8 @@
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
-    /* Estilo específico para los inputs de fecha */
-    input[type="date"] {
+    /* Estilo específico para los inputs de fecha/hora */
+    input[type="date"], input[type="time"] {
         appearance: none;
         -webkit-appearance: none;
         -moz-appearance: none;
@@ -28,9 +28,16 @@
         box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         cursor: pointer;
     }
+    .input-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .input-group > div {
+        flex: 1;
+    }
   </style>
   <script type="module">
-    // Importar funciones de Firebase. Se añade 'query' y 'where' para el filtrado.
+    // Importar funciones de Firebase. Se incluye 'query' y 'where' para el filtrado.
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
     import { getFirestore, collection, getDocs, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
 
@@ -57,14 +64,16 @@
         : `<i class="${iconClass} mr-2"></i> ${text}`;
     }
 
-    // Función para limpiar los campos de fecha
+    // Función para limpiar los campos de fecha y hora
     function resetFilters() {
         document.getElementById('startDate').value = '';
         document.getElementById('endDate').value = '';
-        document.getElementById('loadButton').click(); // Recargar datos sin filtros
+        document.getElementById('startTime').value = ''; // 🆕 Limpiar hora de inicio
+        document.getElementById('endTime').value = '';   // 🆕 Limpiar hora de fin
+        document.getElementById('loadButton').click(); 
     }
 
-    // --- Lógica para cargar y mostrar datos (CON FILTRO) ---
+    // --- Lógica para cargar y mostrar datos (CON FILTRO DE FECHA Y HORA) ---
     async function cargarAsistencias() {
       const loadButton = document.getElementById('loadButton');
       const copyButton = document.getElementById('copyButton');
@@ -81,22 +90,32 @@
       // Obtener valores de los filtros
       const startDateInput = document.getElementById('startDate').value;
       const endDateInput = document.getElementById('endDate').value;
+      const startTimeInput = document.getElementById('startTime').value;
+      const endTimeInput = document.getElementById('endTime').value;
 
       let queryConstraints = [];
       let dbQuery = collection(db, "asistencias");
 
-      // Nota Importante: Asumimos que 'fechaHora' está guardado como string en formato 'YYYY-MM-DD HH:mm:ss'
-      // para que la comparación lexicográfica (de string) funcione correctamente.
+      // ⚠️ IMPORTANTE: Esta lógica asume que el campo 'fechaHora' en Firestore 
+      // está guardado como un string en formato **YYYY-MM-DD HH:mm:ss** // para que la comparación lexicográfica de Firestore funcione como filtro de tiempo.
       
       if (startDateInput) {
-          // Filtra desde el inicio del día seleccionado (e.g., '2025-10-28')
-          const startFilterString = `${startDateInput}`;
+          // Si hay fecha de inicio, la hora de inicio por defecto es 00:00:00
+          const timeComponent = startTimeInput ? `${startTimeInput}:00` : '00:00:00';
+          const startFilterString = `${startDateInput} ${timeComponent}`;
           queryConstraints.push(where("fechaHora", ">=", startFilterString));
       }
 
       if (endDateInput) {
-          // Filtra hasta el final del día seleccionado (e.g., '2025-10-28 23:59:59')
-          const endFilterString = `${endDateInput} 23:59:59`; 
+          let endFilterString;
+          
+          if (endTimeInput) {
+              // Si hay hora de fin, la incluimos y agregamos :59 para cubrir el minuto completo
+              endFilterString = `${endDateInput} ${endTimeInput}:59`;
+          } else {
+              // Si no hay hora de fin, el final del día es 23:59:59
+              endFilterString = `${endDateInput} 23:59:59`; 
+          }
           queryConstraints.push(where("fechaHora", "<=", endFilterString));
       }
 
@@ -257,22 +276,34 @@
    
     <div class="p-4 bg-yellow-50 rounded-xl border border-yellow-200 shadow-md mb-8">
         <h3 class="text-xl font-semibold text-gray-700 mb-4 flex items-center">
-            <i class="fas fa-calendar-alt text-yellow-600 mr-2"></i> Filtrar por Fecha
+            <i class="fas fa-calendar-alt text-yellow-600 mr-2"></i> Filtrar por Fecha y Hora
         </h3>
-        <div class="flex flex-wrap gap-4 items-end">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
             <div>
-                <label for="startDate" class="block text-sm font-medium text-gray-700 mb-1">Desde:</label>
-                <input type="date" id="startDate" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                <label for="startDate" class="block text-sm font-medium text-gray-700 mb-1">Fecha Desde:</label>
+                <input type="date" id="startDate" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm">
             </div>
             <div>
-                <label for="endDate" class="block text-sm font-medium text-gray-700 mb-1">Hasta:</label>
-                <input type="date" id="endDate" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                <label for="startTime" class="block text-sm font-medium text-gray-700 mb-1">Hora Desde:</label>
+                <input type="time" id="startTime" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm">
             </div>
-            <button id="resetFilterButton" class="flex items-center justify-center bg-gray-500 text-white font-semibold py-2 px-4 rounded-xl hover:bg-gray-600 transition duration-300 transform hover:scale-105 shadow-md">
+
+            <div>
+                <label for="endDate" class="block text-sm font-medium text-gray-700 mb-1">Fecha Hasta:</label>
+                <input type="date" id="endDate" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm">
+            </div>
+            <div>
+                <label for="endTime" class="block text-sm font-medium text-gray-700 mb-1">Hora Hasta:</label>
+                <input type="time" id="endTime" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm">
+            </div>
+        </div>
+        
+        <div class="flex justify-start mt-4">
+             <button id="resetFilterButton" class="flex items-center justify-center bg-gray-500 text-white font-semibold py-2 px-4 rounded-xl hover:bg-gray-600 transition duration-300 transform hover:scale-105 shadow-md">
                 <i class="fas fa-undo mr-2"></i> Limpiar Filtros
             </button>
         </div>
-        <p class="text-sm text-gray-500 mt-3 italic">Selecciona fechas y haz clic en "Cargar Asistencias" para aplicar el filtro.</p>
+        <p class="text-sm text-gray-500 mt-3 italic">Selecciona el rango de tiempo y haz clic en "Cargar Asistencias" para aplicar el filtro.</p>
     </div>
             <div class="flex flex-wrap items-center gap-4 mb-10 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
             <button id="loadButton" class="flex items-center justify-center bg-blue-600 text-white font-semibold py-3 px-6 rounded-xl hover:bg-blue-700 transition duration-300 transform hover:scale-105 shadow-lg shadow-blue-300/50">
