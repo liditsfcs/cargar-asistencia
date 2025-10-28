@@ -28,18 +28,11 @@
         box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         cursor: pointer;
     }
-    .input-group {
-        display: flex;
-        gap: 0.5rem;
-    }
-    .input-group > div {
-        flex: 1;
-    }
   </style>
   <script type="module">
-    // Importar funciones de Firebase. Se incluye 'query' y 'where' para el filtrado.
+    // Importar funciones de Firebase.
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-    import { getFirestore, collection, getDocs, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
 
     // ¡IMPORTANTE! Usa la misma configuración que tu app de asistencia
     const firebaseConfig = {
@@ -56,6 +49,42 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
+    // 🆕 Función para parsear tu formato de fecha a un objeto Date de JavaScript.
+    function parseCustomDate(dateString) {
+        // Ejemplo de formato: "28 oct 2025, 12:05 p. m."
+        
+        // Mapeo de meses de español a inglés (necesario para el constructor Date)
+        const monthMap = {
+            'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr',
+            'may': 'May', 'jun': 'Jun', 'jul': 'Jul', 'ago': 'Aug',
+            'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dic': 'Dec'
+        };
+
+        // Reemplazar el mes en español con el mes en inglés
+        let cleanedString = dateString.toLowerCase();
+        for (const [es, en] of Object.entries(monthMap)) {
+            if (cleanedString.includes(es)) {
+                cleanedString = cleanedString.replace(es, en);
+                break;
+            }
+        }
+        
+        // Reemplazar 'a. m.' y 'p. m.' por 'AM' y 'PM'
+        cleanedString = cleanedString.replace('a. m.', 'AM').replace('p. m.', 'PM').replace(',', '');
+        
+        // Intentar crear un objeto Date. 
+        // ¡Esto es sensible a la configuración regional del navegador!
+        const date = new Date(cleanedString);
+        
+        // Si el parseo falla (Date devuelve Invalid Date), usamos un método más manual
+        if (isNaN(date)) {
+            console.warn("Fallo al parsear con constructor Date:", dateString);
+            // Podrías intentar una lógica de parseo más robusta aquí si es necesario.
+        }
+
+        return date;
+    }
+
     // Función auxiliar para actualizar el contenido del botón con un spinner
     function updateButtonContent(button, text, isLoading, iconClass = '') {
       button.disabled = isLoading;
@@ -68,12 +97,12 @@
     function resetFilters() {
         document.getElementById('startDate').value = '';
         document.getElementById('endDate').value = '';
-        document.getElementById('startTime').value = ''; // 🆕 Limpiar hora de inicio
-        document.getElementById('endTime').value = '';   // 🆕 Limpiar hora de fin
+        document.getElementById('startTime').value = ''; 
+        document.getElementById('endTime').value = '';   
         document.getElementById('loadButton').click(); 
     }
 
-    // --- Lógica para cargar y mostrar datos (CON FILTRO DE FECHA Y HORA) ---
+    // --- Lógica para cargar y mostrar datos (FILTRANDO EN JAVASCRIPT) ---
     async function cargarAsistencias() {
       const loadButton = document.getElementById('loadButton');
       const copyButton = document.getElementById('copyButton');
@@ -87,50 +116,73 @@
       totalCountSpan.textContent = ''; 
       copyButton.classList.add('hidden'); 
 
-      // Obtener valores de los filtros
-      const startDateInput = document.getElementById('startDate').value;
-      const endDateInput = document.getElementById('endDate').value;
-      const startTimeInput = document.getElementById('startTime').value;
-      const endTimeInput = document.getElementById('endTime').value;
+      // 1. Obtener los filtros ingresados por el usuario.
+      const startDateInput = document.getElementById('startDate').value; // YYYY-MM-DD
+      const endDateInput = document.getElementById('endDate').value;     // YYYY-MM-DD
+      const startTimeInput = document.getElementById('startTime').value; // HH:mm
+      const endTimeInput = document.getElementById('endTime').value;     // HH:mm
 
-      let queryConstraints = [];
-      let dbQuery = collection(db, "asistencias");
+      // 2. Crear objetos Date para los límites del filtro.
+      let filterStart = null;
+      let filterEnd = null;
 
-      // ⚠️ IMPORTANTE: Esta lógica asume que el campo 'fechaHora' en Firestore 
-      // está guardado como un string en formato **YYYY-MM-DD HH:mm:ss** // para que la comparación lexicográfica de Firestore funcione como filtro de tiempo.
-      
       if (startDateInput) {
-          // Si hay fecha de inicio, la hora de inicio por defecto es 00:00:00
-          const timeComponent = startTimeInput ? `${startTimeInput}:00` : '00:00:00';
-          const startFilterString = `${startDateInput} ${timeComponent}`;
-          queryConstraints.push(where("fechaHora", ">=", startFilterString));
+          // Crea la fecha de inicio con la hora de inicio (si está presente)
+          const startDateTimeString = startDateInput + (startTimeInput ? `T${startTimeInput}:00` : 'T00:00:00');
+          filterStart = new Date(startDateTimeString);
       }
 
       if (endDateInput) {
-          let endFilterString;
-          
-          if (endTimeInput) {
-              // Si hay hora de fin, la incluimos y agregamos :59 para cubrir el minuto completo
-              endFilterString = `${endDateInput} ${endTimeInput}:59`;
-          } else {
-              // Si no hay hora de fin, el final del día es 23:59:59
-              endFilterString = `${endDateInput} 23:59:59`; 
-          }
-          queryConstraints.push(where("fechaHora", "<=", endFilterString));
+          // Crea la fecha de fin con la hora de fin (si está presente)
+          // Si no hay hora, se usa el último segundo del día (23:59:59)
+          const endDateTimeString = endDateInput + (endTimeInput ? `T${endTimeInput}:59` : 'T23:59:59');
+          filterEnd = new Date(endDateTimeString);
       }
-
-      // Aplicar filtros a la consulta
-      let finalQuery = queryConstraints.length > 0 
-          ? query(dbQuery, ...queryConstraints) 
-          : dbQuery;
       
       try {
-        const querySnapshot = await getDocs(finalQuery);
+        // 3. Cargar TODOS los datos de Firebase (sin filtros de query).
+        const querySnapshot = await getDocs(collection(db, "asistencias"));
         
-        const totalRegistros = querySnapshot.size;
+        if (querySnapshot.empty) {
+          messageDiv.textContent = 'No se encontraron registros de asistencia.';
+          messageDiv.classList.remove('hidden');
+          return;
+        }
+
+        const allData = [];
+        querySnapshot.forEach((doc) => {
+            allData.push(doc.data());
+        });
+
+        // 4. Filtrar los datos cargados en JavaScript.
+        const filteredData = allData.filter(data => {
+            const entryDate = parseCustomDate(data.fechaHora);
+            
+            // Si el parseo falla (Invalid Date), lo excluimos
+            if (isNaN(entryDate.getTime())) {
+                console.error("Registro con fecha inválida omitido:", data.fechaHora);
+                return false; 
+            }
+
+            let passStart = true;
+            let passEnd = true;
+
+            if (filterStart) {
+                passStart = entryDate.getTime() >= filterStart.getTime();
+            }
+
+            if (filterEnd) {
+                passEnd = entryDate.getTime() <= filterEnd.getTime();
+            }
+
+            return passStart && passEnd;
+        });
+
+        // 5. Renderizar los datos filtrados.
+        const totalRegistros = filteredData.length;
         totalCountSpan.textContent = `Total: ${totalRegistros}`;
 
-        if (querySnapshot.empty) {
+        if (filteredData.length === 0) {
           messageDiv.textContent = 'No se encontraron registros de asistencia con el filtro aplicado.';
           messageDiv.classList.remove('hidden');
           return;
@@ -148,8 +200,7 @@
             <tbody class="bg-white divide-y divide-gray-100">
         `;
 
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
+        filteredData.forEach((data) => {
           formattedData += `"${data.nombre}";"${data.email}";"${data.fechaHora}"\n`;
           htmlData += `<tr>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${data.nombre}</td>
@@ -272,7 +323,7 @@
       <span id="totalCount" class="text-2xl font-bold text-blue-600 mt-2 sm:mt-0 px-4 py-1 bg-blue-50 rounded-lg border border-blue-200"></span> 
     </div>
 
-        <p class="text-gray-600 mb-8">Esta herramienta te permite exportar y gestionar los datos de asistencia de tu base de datos en Firebase Firestore. La exportación se realiza en formato CSV, ideal para hojas de cálculo.</p>
+        <p class="text-gray-600 mb-8">Esta herramienta te permite **exportar y gestionar** los datos de asistencia de tu base de datos en Firebase Firestore. La exportación se realiza en formato CSV, ideal para hojas de cálculo.</p>
    
     <div class="p-4 bg-yellow-50 rounded-xl border border-yellow-200 shadow-md mb-8">
         <h3 class="text-xl font-semibold text-gray-700 mb-4 flex items-center">
@@ -305,7 +356,8 @@
         </div>
         <p class="text-sm text-gray-500 mt-3 italic">Selecciona el rango de tiempo y haz clic en "Cargar Asistencias" para aplicar el filtro.</p>
     </div>
-            <div class="flex flex-wrap items-center gap-4 mb-10 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+    
+        <div class="flex flex-wrap items-center gap-4 mb-10 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
             <button id="loadButton" class="flex items-center justify-center bg-blue-600 text-white font-semibold py-3 px-6 rounded-xl hover:bg-blue-700 transition duration-300 transform hover:scale-105 shadow-lg shadow-blue-300/50">
       </button>
       
