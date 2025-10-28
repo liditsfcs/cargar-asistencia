@@ -58,7 +58,7 @@
       resultsDiv.innerHTML = '';
       messageDiv.classList.add('hidden');
       totalCountSpan.textContent = ''; 
-      copyButton.classList.add('hidden'); // Ocultar copiar al iniciar carga
+      copyButton.classList.add('hidden'); 
 
       try {
         const querySnapshot = await getDocs(collection(db, "asistencias"));
@@ -82,3 +82,150 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider">Fecha y Hora</th>
             </tr></thead>
             <tbody class="bg-white divide-y divide-gray-100">
+        `;
+
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          formattedData += `"${data.nombre}";"${data.email}";"${data.fechaHora}"\n`;
+          htmlData += `<tr>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${data.nombre}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${data.email}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${data.fechaHora}</td>
+          </tr>`;
+        });
+
+        htmlData += `</tbody></table></div>`;
+        resultsDiv.innerHTML = htmlData;
+        resultsDiv.dataset.csv = formattedData;
+        copyButton.classList.remove('hidden');
+
+      } catch (error) {
+        messageDiv.textContent = 'Error al cargar los datos: ' + error.message;
+        messageDiv.classList.remove('hidden');
+        totalCountSpan.textContent = ''; 
+        console.error("Error fetching documents: ", error);
+      } finally {
+        updateButtonContent(loadButton, 'Cargar Asistencias', false, 'fas fa-download');
+      }
+    }
+
+    // --- Lógica para copiar ---
+    function copiarDatos() {
+        const resultsDiv = document.getElementById('results');
+        const copyButton = document.getElementById('copyButton');
+        const csvData = resultsDiv.dataset.csv;
+        const textArea = document.createElement("textarea");
+        textArea.value = csvData;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            copyButton.innerHTML = '<i class="fas fa-check-circle mr-2"></i> ¡Copiado!';
+        } catch (err) {
+            console.error('No se pudo copiar', err);
+        }
+        document.body.removeChild(textArea);
+        setTimeout(() => { 
+          copyButton.innerHTML = '<i class="fas fa-copy mr-2"></i> Copiar como CSV';
+        }, 2000);
+    }
+
+    // --- LÓGICA AÑADIDA PARA ELIMINAR DATOS ---
+    async function eliminarAsistencias() {
+      const password = prompt("🚨 ATENCIÓN: Para eliminar todos los registros, por favor ingrese la contraseña de administrador:");
+
+      if (password === null) return; 
+
+      if (password === "fcs2160") {
+        const confirmacion = confirm("⚠️ ¿Estás SEGURO de que quieres eliminar TODAS las asistencias? Esta acción no se puede deshacer.");
+        
+        if (confirmacion) {
+          const deleteButton = document.getElementById('deleteButton');
+          const resultsDiv = document.getElementById('results');
+          const messageDiv = document.getElementById('message');
+          const totalCountSpan = document.getElementById('totalCount');
+
+          deleteButton.disabled = true;
+          deleteButton.innerHTML = '<i class="fas fa-trash spinner mr-2"></i> Eliminando...';
+          messageDiv.classList.add('hidden');
+
+          try {
+            const querySnapshot = await getDocs(collection(db, "asistencias"));
+            
+            if (querySnapshot.empty) {
+              messageDiv.textContent = 'La base de datos ya está vacía.';
+              messageDiv.classList.remove('hidden');
+              return;
+            }
+            
+            const deletePromises = [];
+            querySnapshot.forEach((docSnapshot) => {
+              deletePromises.push(deleteDoc(doc(db, "asistencias", docSnapshot.id)));
+            });
+
+            await Promise.all(deletePromises);
+
+            resultsDiv.innerHTML = '';
+            document.getElementById('copyButton').classList.add('hidden');
+            messageDiv.className = "p-4 mb-8 text-sm font-medium rounded-lg border bg-green-100 border-green-500 text-green-800";
+            messageDiv.textContent = '✅ ¡Todas las asistencias han sido eliminadas correctamente!';
+            totalCountSpan.textContent = 'Total: 0'; 
+
+          } catch (error) {
+            messageDiv.className = "p-4 mb-8 text-sm font-medium rounded-lg border bg-red-100 border-red-500 text-red-800";
+            messageDiv.textContent = '❌ Error al eliminar los datos: ' + error.message;
+            console.error("Error deleting documents: ", error);
+          } finally {
+            deleteButton.disabled = false;
+            deleteButton.innerHTML = '<i class="fas fa-eraser mr-2"></i> Eliminar asistencias';
+          }
+        }
+      } else {
+        alert("Contraseña incorrecta. No se realizaron cambios.");
+      }
+    }
+
+    // Asignar eventos a los botones y establecer su estado inicial
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('loadButton').addEventListener('click', cargarAsistencias);
+      document.getElementById('copyButton').addEventListener('click', copiarDatos);
+      document.getElementById('deleteButton').addEventListener('click', eliminarAsistencias);
+      
+      // Establecer los iconos iniciales en los botones
+      document.getElementById('loadButton').innerHTML = '<i class="fas fa-download mr-2"></i> Cargar Asistencias';
+      document.getElementById('copyButton').innerHTML = '<i class="fas fa-copy mr-2"></i> Copiar como CSV';
+      document.getElementById('deleteButton').innerHTML = '<i class="fas fa-eraser mr-2"></i> Eliminar asistencias';
+    });
+  </script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8">
+  <div class="max-w-5xl mx-auto bg-white p-8 rounded-xl shadow-2xl border border-gray-200">
+    
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4">
+      <h1 class="text-3xl font-extrabold text-gray-800 flex items-center">
+        <i class="fas fa-chart-bar text-blue-500 mr-3"></i> Gestión de Asistencias
+      </h1>
+      <span id="totalCount" class="text-2xl font-bold text-blue-600 mt-2 sm:mt-0 px-4 py-1 bg-blue-50 rounded-lg border border-blue-200"></span> 
+      
+    </div>
+
+        <p class="text-gray-600 mb-8">Esta herramienta te permite **exportar y gestionar** los datos de asistencia de tu base de datos en Firebase Firestore. La exportación se realiza en formato CSV, ideal para hojas de cálculo.</p>
+    
+        <div class="flex flex-wrap items-center gap-4 mb-10 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+            <button id="loadButton" class="flex items-center justify-center bg-blue-600 text-white font-semibold py-3 px-6 rounded-xl hover:bg-blue-700 transition duration-300 transform hover:scale-105 shadow-lg shadow-blue-300/50">
+      </button>
+      
+            <button id="copyButton" class="hidden flex items-center justify-center bg-green-600 text-white font-semibold py-3 px-6 rounded-xl hover:bg-green-700 transition duration-300 transform hover:scale-105 shadow-lg shadow-green-300/50">
+      </button>
+      
+            <button id="deleteButton" class="flex items-center justify-center bg-red-600 text-white font-semibold py-3 px-6 rounded-xl hover:bg-red-700 transition duration-300 transform hover:scale-105 shadow-lg shadow-red-300/50 ml-auto">
+      </button>
+    </div>
+
+        <div id="message" class="hidden p-4 mb-8 text-sm font-medium rounded-lg border"></div>
+
+        <div id="results" class="overflow-x-auto mt-8">
+    </div>
+  </div>
+</body>
+</html>
